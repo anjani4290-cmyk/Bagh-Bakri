@@ -1,0 +1,111 @@
+name: Build Android Release (.aab)
+
+# Produces a signed bagh-bakri-release.aab, ready to upload to the
+# Google Play Console, using GitHub's free hosted build machines
+# (which already have the Android SDK, Gradle, and a JDK installed).
+#
+# Run it from the "Actions" tab in your GitHub repo -> select this
+# workflow -> "Run workflow". When it finishes, download the .aab
+# from the run's "Artifacts" section.
+#
+# One-time setup required before this will produce a SIGNED bundle -
+# see README.md -> "Building the .aab with GitHub Actions" for the
+# exact keytool command and where to paste the four secrets below.
+# Without those secrets, this still builds an UNSIGNED bundle so you
+# can confirm the build works, but Google Play will not accept an
+# unsigned upload.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Cordova
+        run: npm install -g cordova
+
+      - name: Assemble the Cordova shell project
+        run: |
+          cordova create cordova-shell com.yourname.baghbakri "Bagh Bakri"
+          rm -rf cordova-shell/www
+          mkdir cordova-shell/www
+          cp -r index.html src assets images sounds lib cordova-shell/www/
+          cp config.xml cordova-shell/config.xml
+
+      - name: Add Android platform
+        working-directory: cordova-shell
+        run: cordova platform add android
+
+      - name: Write signing config (if secrets are present)
+        id: signing
+        working-directory: cordova-shell
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            cat > build.json << EOF
+          {
+            "android": {
+              "release": {
+                "keystore": "release.keystore",
+                "storePassword": "$KEYSTORE_PASSWORD",
+                "alias": "$KEY_ALIAS",
+                "password": "$KEY_PASSWORD",
+                "keystoreType": ""
+              }
+            }
+          }
+          EOF
+            echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing secrets found - building an UNSIGNED bundle. Google Play will reject an unsigned upload. See README.md to add the four ANDROID_* secrets."
+          fi
+
+      - name: Build release App Bundle (signed)
+        if: steps.signing.outputs.has_signing == 'true'
+        working-directory: cordova-shell
+        run: cordova build android --release --buildConfig=build.json -- --packageType=bundle
+
+      - name: Build release App Bundle (unsigned)
+        if: steps.signing.outputs.has_signing == 'false'
+        working-directory: cordova-shell
+        run: cordova build android --release -- --packageType=bundle
+
+      - name: Locate and rename the .aab
+        working-directory: cordova-shell
+        run: |
+          AAB_PATH=$(find platforms/android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          echo "Found: $AAB_PATH"
+          mkdir -p ../dist
+          cp "$AAB_PATH" ../dist/bagh-bakri-release.aab
+
+      - name: Upload .aab as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bagh-bakri-release
+          path: dist/bagh-bakri-release.aab

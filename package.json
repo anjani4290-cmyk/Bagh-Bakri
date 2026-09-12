@@ -1,0 +1,27 @@
+{
+  "name": "bagh-bakri",
+  "version": "1.0.0",
+  "description": "Bagh Bakri - a classic two-player capture board game. Play with a friend or against the computer.",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve . -l 5000",
+    "cordova:add-android": "cordova platform add android",
+    "cordova:add-ios": "cordova platform add ios",
+    "cordova:build-android": "cordova build android --release",
+    "cordova:build-ios": "cordova build ios --release",
+    "firebase:deploy": "firebase deploy"
+  },
+  "keywords": [
+    "board-game",
+    "bagh-bakri",
+    "bagh-chal",
+    "strategy-game",
+    "two-player",
+    "capture-game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "cordova": "^12.0.0"
+  }
+}
