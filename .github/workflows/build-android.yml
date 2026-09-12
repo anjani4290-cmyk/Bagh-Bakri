@@ -76,7 +76,7 @@ jobs:
                 "storePassword": "$KEYSTORE_PASSWORD",
                 "alias": "$KEY_ALIAS",
                 "password": "$KEY_PASSWORD",
-                "keystoreType": ""
+                "keystoreType": "PKCS12"
               }
             }
           }
