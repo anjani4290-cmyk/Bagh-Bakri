@@ -50,6 +50,7 @@ jobs:
           rm -rf cordova-shell/www
           mkdir cordova-shell/www
           cp -r index.html src assets images sounds lib cordova-shell/www/
+          cp -r assets cordova-shell/assets
           cp config.xml cordova-shell/config.xml
 
       - name: Add Android platform
