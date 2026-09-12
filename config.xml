@@ -24,7 +24,6 @@
     <allow-intent href="https://*/*" />
     <platform name="android">
         <allow-intent href="market:*" />
-        <icon density="hdpi" src="assets/android/icon-hdpi.png"/>
         <preference name="AndroidXEnabled" value="true" />
     </platform>
     <platform name="ios">
