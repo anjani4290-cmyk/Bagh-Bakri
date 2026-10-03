@@ -1,21 +1,20 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.baghbakri.game" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+<widget id="com.anjanikumar.baghbakri" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
     <name>Bagh Bakri</name>
     <description>
         A classic two-player strategy board game. Capture all of the
         opponent's pieces to win. Play with a friend on one device, or
         against the built-in computer opponent.
     </description>
-    <author email="anjanireview@gmail.com">
-        Bagh Bakri
-    </author>
+    <author>Anjani Kumar</author>
 
     <!--
         Cordova serves everything under www/ as the app's web content.
-        This project keeps its source at the repo root, so when you
-        run `cordova create`, copy (or symlink) index.html, src/,
-        assets/, images/, sounds/ and lib/ into that project's www/
-        folder before building. See README.md for the exact steps.
+        This project keeps its source at the repo root; the GitHub Actions
+        workflow (and README "Option B") copies index.html, src/, assets/,
+        images/, sounds/ and lib/ into cordova-shell/www/ and the launcher
+        icons into cordova-shell/res/icon/android/ before building.
+        Icon paths below are relative to the Cordova project root.
     -->
     <content src="index.html" />
 
@@ -24,7 +23,14 @@
     <allow-intent href="https://*/*" />
     <platform name="android">
         <allow-intent href="market:*" />
+        <icon density="ldpi" src="res/icon/android/icon-ldpi.png" />
+        <icon density="mdpi" src="res/icon/android/icon-mdpi.png" />
+        <icon density="hdpi" src="res/icon/android/icon-hdpi.png" />
+        <icon density="xhdpi" src="res/icon/android/icon-xhdpi.png" />
+        <icon density="xxhdpi" src="res/icon/android/icon-xxhdpi.png" />
+        <icon density="xxxhdpi" src="res/icon/android/icon-xxxhdpi.png" />
         <preference name="AndroidXEnabled" value="true" />
+        <preference name="android-targetSdkVersion" value="36" />
     </platform>
     <platform name="ios">
         <allow-intent href="itms:*" />
@@ -33,5 +39,5 @@
 
     <preference name="Orientation" value="portrait" />
     <preference name="Fullscreen" value="false" />
-    <preference name="BackgroundColor" value="#FF191009" />
+    <preference name="BackgroundColor" value="0xff191009" />
 </widget>

@@ -6,7 +6,15 @@ dependency-free web app that can also be packaged for Android and iOS.
 - Play with a friend on the same device, or against a built-in
   computer opponent.
 - 37-point board: a 5×5 grid plus a 6-point triangle attached at the
-  top and bottom, with the centre point starting empty.
+  top and bottom, with the centre point starting empty. Each grid cell
+  has exactly **one** diagonal (Alquerque pattern) and the triangles have
+  no crossing lines.
+- Three computer levels — **Easy**, **Moderate**, **Hard** — that really
+  play at different strengths (see below).
+- Eight board themes: Classic, Wooden, Neon, Denim, Pirate, Penguin,
+  Alien, Diwali. Themes are purely visual.
+- An interactive **How to Play** tutorial that uses the real board and the
+  real rules engine.
 - Full rules: one-step moves along drawn lines only, jump-captures,
   **mandatory** multi-jump chains (the same piece must keep capturing
   while it can), win and stalemate detection.
@@ -27,16 +35,19 @@ bagh-bakri/
 ├── assets/             App icons & store graphics (favicon, feature graphic).
 ├── src/
 │   ├── js/
-│   │   ├── board.js     Board graph: node positions + connections (pure data).
+│   │   ├── board.js     THE board: node positions, lines, adjacency, jump table (pure data).
+│   │   ├── theme.js     8 visual themes (CSS variables, piece colours, glyphs). No rules.
+│   │   ├── tutorial.js  Interactive How-to-Play using the real engine on scratch boards.
 │   │   ├── sound.js     Synthesized sound effects (move, capture, win, applause).
 │   │   ├── timer.js     Elapsed-time stopwatch shown during play and on the win screen.
 │   │   ├── stats.js     Persists game history & best times in localStorage.
 │   │   ├── game.js      Rules engine: state, moves, captures, win/draw.
-│   │   ├── ai.js        Computer opponent (capture-chain lookahead).
+│   │   ├── ai.js        Computer opponent: Easy / Moderate / Hard alpha-beta search.
 │   │   ├── render.js    Draws the SVG board, animates moves, win confetti.
 │   │   └── main.js      Wires up buttons/modals and boots the app.
 │   └── css/
 │       └── style.css    All styling.
+├── tests/              node --test (topology + AI) and a Playwright e2e script.
 ├── lib/                Reserved for any third-party script you add later.
 ├── images/             Store screenshots / promo images (none needed to play).
 ├── sounds/             Reserved for sound effects (currently silent).
@@ -46,20 +57,22 @@ bagh-bakri/
 └── README.md           This file.
 ```
 
-### Why split into five JS files?
+### Why split into several JS files?
 
 Each file has one job, all communicating through a single global
 namespace (`window.BB`) — no build step or bundler required:
 
 | File | Exposes | Depends on |
 |---|---|---|
-| `board.js` | `BB.board` (nodePos, edges, adj) | nothing |
+| `board.js` | `BB.board` (nodePos, edges, adj, jumps, viewBox) | nothing |
+| `theme.js` | `BB.theme` | nothing (visual only) |
 | `game.js` | `BB.game` (state + rules) | `BB.board` |
 | `ai.js` | `BB.ai` (computer opponent) | `BB.game` |
-| `render.js` | `BB.render` (drawing + DOM) | `BB.board`, `BB.game` |
+| `render.js` | `BB.render` (drawing + DOM) | `BB.board`, `BB.game`, `BB.theme` |
+| `tutorial.js` | `BB.tutorial` | `BB.board`, `BB.game`, `BB.render` |
 | `main.js` | — (event wiring only) | all of the above |
 
-`index.html` loads them in exactly that order. If you rename or split
+`index.html` loads them in exactly that order (board, theme, sound, timer, stats, game, ai, render, tutorial, main). If you rename or split
 a file further, keep that order intact.
 
 ---
@@ -88,7 +101,7 @@ Deploy the whole folder as-is to any static host:
 
 - **GitHub Pages** — push this repo, enable Pages on the `main` branch.
 - **Firebase Hosting** — `firebase init hosting` (public dir = this
-  folder), then `npm run firebase:deploy`.
+  folder), then `firebase deploy`.
 - **Netlify** — drag-and-drop the folder, or connect the repo.
 
 ### Android (Google Play)
@@ -121,7 +134,7 @@ install on your own computer).
    | `ANDROID_KEYSTORE_BASE64` | contents of `release.keystore.b64` |
    | `ANDROID_KEYSTORE_PASSWORD` | the keystore password you set in step 2 |
    | `ANDROID_KEY_ALIAS` | `baghbakri` (or whatever alias you used) |
-   | `ANDROID_KEY_PASSWORD` | the key password you set in step 2 |
+   | `ANDROID_KEY_PASSWORD` | the key password you set in step 2 (use the **same** password as the keystore password) |
 
 **Every time you want a build:**
 
@@ -132,10 +145,22 @@ install on your own computer).
 4. Upload that file to the Google Play Console (Release → Production →
    Create new release).
 
-Without the four secrets, the workflow still runs and produces an
-**unsigned** bundle so you can confirm the build itself works — but
-Google Play will reject an unsigned upload, so you do need the
-keystore secrets before submitting.
+The application ID is **`com.anjanikumar.baghbakri`** (set once in
+`config.xml`). The workflow refuses to build if `config.xml` says anything
+else. Once a build with this ID is uploaded to Google Play it can never be
+changed, so don't edit it.
+
+The workflow is pinned to Cordova CLI 13.0.0 + cordova-android 15.0.0,
+which target Android API 36 (required by Google Play for new apps and
+updates since 31 Aug 2026). It fails — instead of producing a bad file — if
+the signing secrets are missing or wrong, an icon is missing, the project
+does not target API 36, or the finished `.aab` is unsigned or does not contain
+the expected package name. For a dry run without secrets, tick
+**allow_unsigned** when starting the workflow; Google Play rejects that file.
+
+**Every new Play upload needs a higher version.** Bump `version` in
+`config.xml` (e.g. `1.0.0` → `1.0.1`); Cordova derives the Android
+versionCode from it (1.0.0 → 10000, 1.0.1 → 10001).
 
 #### Option B — Build locally
 
@@ -143,11 +168,13 @@ The `android/` folder in this repo is a placeholder — Cordova
 generates the real native project for you:
 
 ```bash
-npm install -g cordova
-cordova create cordova-shell com.yourname.baghbakri "Bagh Bakri"
+npm install -g cordova@13.0.0
+cordova create cordova-shell com.anjanikumar.baghbakri "Bagh Bakri"
 cd cordova-shell
 cp -r ../index.html ../src ../assets ../images ../sounds ../lib www/
-cordova platform add android
+cp ../config.xml config.xml
+mkdir -p res/icon && cp -r ../assets/android res/icon/android
+cordova platform add android@15.0.0
 cordova build android --release -- --packageType=bundle
 ```
 
@@ -186,23 +213,39 @@ tools like Canva and a ready-to-use privacy policy template).
 
 ## How the rules engine works (for anyone extending the code)
 
-- **Board as a graph, not pixels.** `board.js` defines each of the 37
-  points and which pairs of points have a line drawn between them.
-  Nothing about movement is hard-coded to "up/down/left/right" —
-  a move is legal wherever an edge exists in the graph.
-- **Captures are pure geometry.** A jump from A over B to C is legal
-  when B is an opponent piece, C is empty, edges A–B and B–C both
-  exist, and the vector A→B exactly equals B→C (i.e. B sits exactly
-  halfway between A and C in a straight line). This is what lets
-  captures work correctly across the irregular triangle sections
-  without a separate rule for every direction.
+- **Board as a graph, not pixels.** `board.js` is the single source of
+  truth: it defines the 37 points, the lines between them, and a
+  precomputed jump table (`jumps[a][b]` = points you can land on when
+  jumping from `a` over `b`). The renderer draws `edges`; the rules, the
+  AI and the tutorial read `adj`/`jumps`. A line that is not in `edges`
+  can neither be drawn nor walked or captured on.
+- **Captures are pure geometry.** A jump A→B→C is legal when B is an
+  opponent piece, C is empty, A–B and B–C are both lines, and the two
+  steps point in the same direction (compared as reduced vectors, so the
+  shorter triangle steps line up with grid steps).
 - **Chains are mandatory.** After a capture, `game.js` checks whether
   the same piece has another capture available. If so, the turn does
   not pass — the same piece must jump again.
-- **The AI reuses the exact same rule functions.** `ai.js` never
-  duplicates movement logic; it calls `BB.game.computeMoves(...)` on
-  real and hypothetical boards to decide which legal move is best, the
-  same way the human's move is validated.
+- **The AI reads the same board.** `ai.js` compiles `BB.board`'s
+  adjacency and jump table into integer arrays at load time — it has no
+  board definition of its own, so it can't disagree with the rules.
+  A "turn" is a step or a whole forced capture chain. Levels:
+  **Easy** = no lookahead, 35 % random slips, otherwise grabs the most
+  pieces right now; **Moderate** = 3-ply alpha-beta + capture
+  quiescence (~350 ms cap); **Hard** = iterative-deepening alpha-beta up
+  to 8 plies + quiescence (~1.1 s cap). Searches are time-boxed so the UI
+  never freezes.
+- **Restarts are safe.** `state.gen` is bumped on every (re)start; pending
+  AI timers and slide animations compare against it and drop themselves
+  if the game has been restarted. Play Again restarts with the same mode,
+  side, difficulty and theme.
+
+### Tests
+
+```bash
+npm test          # topology audit + AI tests (node, no dependencies)
+npm run test:e2e  # browser audit (needs Python + Playwright/Chromium)
+```
 
 ---
 

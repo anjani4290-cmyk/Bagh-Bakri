@@ -5,7 +5,12 @@ store listing graphics. The game itself only needs `icon.png`
 (referenced by `index.html` as the browser favicon) — everything else
 here is for packaging/publishing.
 
-Suggested contents once you create them:
+Present now: `icon.png` (512×512, also the Play Store listing icon) and `android/icon-*.png`
+(36–192 px launcher icons, generated from the game's own board/pieces — replace them with your own
+artwork at the same sizes and filenames if you have a final logo). Still to create yourself:
+`feature-graphic.png` (1024×500) and store screenshots.
+
+Full suggested layout:
 
 ```
 assets/

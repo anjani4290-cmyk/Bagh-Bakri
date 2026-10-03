@@ -1,4 +1,14 @@
 :root{
+  /* Defaults = Classic theme. theme.js overwrites these at runtime. */
+  --bg2: #2a1c0f;
+  --accent-ink: #241708;
+  --board-bg: linear-gradient(160deg,#7a4a26,#4a2c14);
+  --board-pattern: repeating-linear-gradient(45deg,rgba(255,193,110,.06) 0 10px,transparent 10px 20px);
+  --board-border: rgba(233,220,184,.2);
+  --edge-w: 2; --edge-op: .55; --edge-dash: none; --edge-glow: none;
+  --piece-stroke: rgba(0,0,0,.45); --piece-glow: none;
+  --ring-normal: #8fd18f; --ring-capture: #ff8a3d; --ring-selected: #c9a227;
+  --motif-op: .14;
   --bg: #191009;
   --panel: #241708;
   --wood-light: #7a4a26;
@@ -16,7 +26,7 @@
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
-  background: radial-gradient(ellipse at 50% -10%, #2a1c0f 0%, var(--bg) 60%);
+  background: radial-gradient(ellipse at 50% -10%, var(--bg2) 0%, var(--bg) 60%);
   color: var(--cream);
   font-family: 'Inter', sans-serif;
   min-height:100vh;
@@ -98,23 +108,25 @@ h1{
 .message.show{ opacity: 1; }
 
 .board-wrap{
-  background: linear-gradient(160deg, var(--wood-light), var(--wood-dark));
+  background: var(--board-bg);
   border-radius: 16px;
   padding: 10px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 40px rgba(0,0,0,0.25);
-  border: 1px solid rgba(233,220,184,0.2);
+  border: 2px solid var(--board-border);
 }
 svg{ width:100%; height:auto; display:block; touch-action: manipulation; }
 
-.edge{ stroke: var(--line); stroke-width: 2; stroke-linecap: round; opacity:0.55; }
+.edges{ filter: var(--edge-glow); }
+.edge{ stroke: var(--edge); stroke-width: var(--edge-w); stroke-linecap: round; opacity: var(--edge-op); stroke-dasharray: var(--edge-dash); }
 .node-dot{ fill: var(--node); }
-.piece{ cursor:pointer; stroke: rgba(0,0,0,0.45); stroke-width: 1.5px; }
-.piece.R{ fill: var(--red); }
-.piece.G{ fill: var(--green); }
+.pg{ filter: var(--piece-glow); }
+.piece{ cursor:pointer; stroke: var(--piece-stroke); stroke-width: 1.5px; }
+.pg .shine{ fill:#fff; opacity:.28; pointer-events:none; }
+.pg .glyph{ font-size:15px; pointer-events:none; user-select:none; }
 .hit{ cursor:pointer; }
-.ring-selected{ fill:none; stroke: var(--brass); stroke-width:3; }
-.ring-normal{ fill:none; stroke:#8fd18f; stroke-width:2.5; opacity:0.9; }
-.ring-capture{ fill:none; stroke:#ff8a3d; stroke-width:3.5; }
+.ring-selected{ fill:none; stroke: var(--ring-selected); stroke-width:3; }
+.ring-normal{ fill:none; stroke: var(--ring-normal); stroke-width:2.5; opacity:0.9; }
+.ring-capture{ fill:none; stroke: var(--ring-capture); stroke-width:3.5; }
 @keyframes pulse{
   0%{ opacity: 0.5; }
   50%{ opacity: 1; }
@@ -141,8 +153,10 @@ button{
   cursor:pointer;
 }
 button:hover{ border-color: var(--brass); color: var(--brass); }
-button.primary{ background: var(--brass); color: #241708; border-color: var(--brass); }
-button.primary:hover{ color: #241708; opacity: 0.9; }
+button.primary{ background: var(--brass); color: var(--accent-ink); border-color: var(--brass); }
+button.primary:hover{ color: var(--accent-ink); opacity: 0.9; }
+button:disabled{ opacity:.4; cursor:default; }
+.hidden{ display:none !important; }
 
 .modal-overlay{
   position: fixed; inset:0;
@@ -151,6 +165,13 @@ button.primary:hover{ color: #241708; opacity: 0.9; }
   padding: 20px;
   z-index: 20;
 }
+/* Layering (bottom -> top): game-over 20, setup 25, then the dialogs that
+   can be opened FROM setup (theme, tutorial, stats) 27, confetti 30.
+   Setup MUST outrank game-over: it used to sit underneath it, which is what
+   made "Play Again" appear to do nothing. */
+#winOverlay{ z-index: 20; }
+#modeOverlay{ z-index: 25; }
+#statsOverlay, #themeOverlay, #tutorialOverlay{ z-index: 27; }
 .modal-overlay.hidden{ display:none; }
 .modal{
   background: var(--panel);
@@ -210,14 +231,14 @@ button.primary:hover{ color: #241708; opacity: 0.9; }
 .board-wrap::before{
   content:"";
   position:absolute; inset:10px;
-  background-image: repeating-linear-gradient(45deg, rgba(255,193,110,0.06) 0px, rgba(255,193,110,0.06) 10px, transparent 10px, transparent 20px);
+  background-image: var(--board-pattern);
   border-radius: 12px;
   pointer-events:none;
 }
 .corner-motif{
   position:absolute;
   font-size: 26px;
-  opacity: 0.14;
+  opacity: var(--motif-op);
   pointer-events:none;
   user-select:none;
   filter: grayscale(0.25);
@@ -230,6 +251,7 @@ button.primary:hover{ color: #241708; opacity: 0.9; }
 svg{ position:relative; z-index:2; }
 
 .moving-piece{ filter: drop-shadow(0 0 7px rgba(255,209,102,0.9)); pointer-events:none; }
+.moving-piece .piece{ pointer-events:none; }
 .trail-dot{ fill:#ffd166; pointer-events:none; filter: drop-shadow(0 0 3px rgba(255,209,102,0.8)); }
 
 #confettiLayer{
@@ -293,3 +315,31 @@ footer{
   margin-top: 18px;
   line-height: 1.5;
 }
+
+/* ---------- setup / difficulty ---------- */
+.mode-row{ display:flex; gap:10px; }
+.mode-row button{ flex:1; }
+.diff-btn{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+.diff-btn small{ font-weight:500; font-size:12px; opacity:.8; }
+#modeTag{ color: var(--line-dim); font-weight:600; }
+.win-actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+
+/* ---------- theme picker ---------- */
+.theme-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+.theme-card{ display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; padding:10px; }
+.theme-card small{ font-weight:500; font-size:11px; color:var(--line-dim); line-height:1.3; }
+.theme-card.on{ border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass) inset; }
+.theme-card .swatch{ width:100%; height:44px; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:14px; border:1px solid rgba(255,255,255,.2); }
+.theme-card .swatch i{ width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(0,0,0,.4); display:block; }
+
+/* ---------- tutorial ---------- */
+.tutorial-modal{ max-width: 460px; }
+.tut-board-wrap{ background: var(--board-bg); border:2px solid var(--board-border); border-radius:12px; padding:6px; position:relative; }
+.tut-board-wrap svg{ max-height: 46vh; margin:0 auto; }
+.tut-hint{ color: var(--brass); font-weight:600; min-height:20px; margin:4px 0; }
+.tut-dots{ display:flex; gap:6px; justify-content:center; margin:6px 0 10px; }
+.tdot{ width:8px; height:8px; border-radius:50%; background: rgba(233,220,184,.25); }
+.tdot.on{ background: var(--brass); }
+.tut-nav{ display:flex; gap:8px; align-items:center; }
+.tut-nav .spacer{ flex:1; }
+.tut-nav button{ white-space:nowrap; padding:10px 12px; }

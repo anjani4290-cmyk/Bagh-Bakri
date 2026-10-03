@@ -11,7 +11,7 @@
 window.BB = window.BB || {};
 
 (function (BB) {
-  const { nodePos, adj } = BB.board;
+  const { nodePos, adj, jumps } = BB.board;
 
   const state = {
     pieces: {},
@@ -23,7 +23,9 @@ window.BB = window.BB || {};
     gameOver: false,
     gameMode: 'pvp',        // 'pvp' or 'pvc'
     computerColor: null,   // 'R' or 'G' when gameMode === 'pvc'
-    animating: false       // true while a piece is sliding, to block input
+    difficulty: 'moderate', // 'easy' | 'moderate' | 'hard' (vs computer only)
+    animating: false,      // true while a piece is sliding, to block input
+    gen: 0                 // bumped on every (re)start; stale callbacks compare against it
   };
 
   function opponent(p) {
@@ -45,14 +47,9 @@ window.BB = window.BB || {};
       if (!board[n]) {
         normal.push(n);
       } else if (board[n] === opponent(owner)) {
-        (adj[n] || []).forEach((m) => {
-          if (m === id || board[m]) return;
-          const A = nodePos[id], B = nodePos[n], C = nodePos[m];
-          const dx1 = B.x - A.x, dy1 = B.y - A.y;
-          const dx2 = C.x - B.x, dy2 = C.y - B.y;
-          if (dx1 === dx2 && dy1 === dy2) {
-            captures.push({ through: n, to: m });
-          }
+        // Straight-line jumps over n come from the shared board topology.
+        ((jumps[id] && jumps[id][n]) || []).forEach((m) => {
+          if (!board[m]) captures.push({ through: n, to: m });
         });
       }
     });
@@ -67,7 +64,9 @@ window.BB = window.BB || {};
     });
   }
 
-  function initGame() {
+  // The starting layout as a plain {nodeId: 'R'|'G'|null} map. Pure - the
+  // tutorial uses it too, so it always shows the real opening position.
+  function makeInitialPieces() {
     const pieces = {};
     Object.keys(nodePos).forEach((id) => (pieces[id] = null));
 
@@ -86,8 +85,17 @@ window.BB = window.BB || {};
     ['b1_0', 'b1_1', 'b1_2', 'b2_0', 'b2_1', 'b2_2'].forEach((id) => (pieces[id] = 'G'));
 
     // Row 2, including the centre point g2_2, starts empty.
+    return pieces;
+  }
 
-    state.pieces = pieces;
+  // Full reset of every piece of per-game state. Bumping `gen` makes any
+  // animation frame or AI timer that was scheduled for the PREVIOUS game
+  // recognise it is stale and do nothing.
+  function initGame() {
+    state.gen++;
+    if (BB.ai && BB.ai.cancel) BB.ai.cancel();
+
+    state.pieces = makeInitialPieces();
     state.currentPlayer = Math.random() < 0.5 ? 'R' : 'G';
     state.selected = null;
     state.mustContinue = null;
@@ -97,16 +105,23 @@ window.BB = window.BB || {};
     state.animating = false;
 
     BB.render.hideWinOverlay();
+    BB.render.clearTransient();
     BB.render.updateStatusBar();
     BB.timer.start();
     BB.render.render();
     BB.ai.aiPlayIfNeeded();
   }
 
-  function startGame(mode, computerColor) {
+  function startGame(mode, computerColor, difficulty) {
     state.gameMode = mode;
-    state.computerColor = computerColor;
+    state.computerColor = mode === 'pvc' ? computerColor : null;
+    if (difficulty) state.difficulty = difficulty;
     initGame();
+  }
+
+  // "Play Again" / "Restart": same mode, side, difficulty (and theme).
+  function restart() {
+    startGame(state.gameMode, state.computerColor, state.difficulty);
   }
 
   function selectPiece(id) {
@@ -124,6 +139,14 @@ window.BB = window.BB || {};
     state.highlights = { normal: [], capture: [] };
   }
 
+  // Extra context so vs-computer results are filed under the right level.
+  function statsCtx() {
+    return {
+      difficulty: state.gameMode === 'pvc' ? state.difficulty : null,
+      humanColor: state.gameMode === 'pvc' ? opponent(state.computerColor) : null
+    };
+  }
+
   function checkWin() {
     const counts = BB.render.updateStatusBar();
     if (counts.G === 0 || counts.R === 0) {
@@ -133,7 +156,7 @@ window.BB = window.BB || {};
       const winner = counts.G === 0 ? 'Red' : 'Green';
       const loser = counts.G === 0 ? 'Green' : 'Red';
       const elapsed = BB.timer.getElapsedSeconds();
-      const isBest = BB.stats.record(winnerColor, elapsed, state.gameMode);
+      const isBest = BB.stats.record(winnerColor, elapsed, state.gameMode, statsCtx());
       BB.render.showWinOverlay(
         `🏆 ${winner} Wins!`,
         `All 16 ${loser} pieces have been captured — won in ${BB.timer.format(elapsed)}.` +
@@ -154,7 +177,7 @@ window.BB = window.BB || {};
       state.gameOver = true;
       BB.timer.stop();
       const elapsed = BB.timer.getElapsedSeconds();
-      BB.stats.record('draw', elapsed, state.gameMode);
+      BB.stats.record('draw', elapsed, state.gameMode, statsCtx());
       BB.render.showWinOverlay(
         "It's a Draw",
         `${state.currentPlayer === 'R' ? 'Red' : 'Green'} has no legal move remaining — game lasted ${BB.timer.format(elapsed)}.`
@@ -165,7 +188,9 @@ window.BB = window.BB || {};
 
   function doNormalMove(from, to) {
     state.animating = true;
+    const gen = state.gen;
     BB.render.animateMove(from, to, {}, () => {
+      if (gen !== state.gen) return; // game was restarted mid-animation
       state.pieces[to] = state.pieces[from];
       state.pieces[from] = null;
       clearSelectionState();
@@ -181,7 +206,9 @@ window.BB = window.BB || {};
     state.animating = true;
     const capturedOwner = state.pieces[through];
     const mover = state.pieces[from];
+    const gen = state.gen;
     BB.render.animateMove(from, to, { through }, () => {
+      if (gen !== state.gen) return; // game was restarted mid-animation
       state.pieces[to] = mover;
       state.pieces[from] = null;
       state.pieces[through] = null;
@@ -249,8 +276,10 @@ window.BB = window.BB || {};
     opponent,
     computeMoves,
     anyLegalMove,
+    makeInitialPieces,
     initGame,
     startGame,
+    restart,
     selectPiece,
     clearSelectionState,
     checkWin,

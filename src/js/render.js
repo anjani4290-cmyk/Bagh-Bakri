@@ -19,41 +19,96 @@ window.BB = window.BB || {};
     return e;
   }
 
-  function render(hideIds) {
-    hideIds = hideIds || [];
-    const { nodePos, edges } = BB.board;
-    const s = BB.game.state;
+  let svgSeq = 0;
 
-    svg.innerHTML = '';
+  // A piece = gradient disc + soft highlight + optional theme glyph, in one <g>
+  // positioned by transform so it can be animated cheaply.
+  function makePiece(owner, x, y, gradPrefix, extraClass) {
+    const th = BB.theme.current();
+    const g = el('g', { class: `pg ${extraClass || ''}`.trim(), transform: `translate(${x} ${y})` });
+    g.appendChild(el('circle', { r: 14.5, class: `piece ${owner}`, fill: `url(#${gradPrefix}${owner})` }));
+    g.appendChild(el('circle', { cx: -4.5, cy: -5, r: 4.2, class: 'shine' }));
+    const glyph = th.glyph && th.glyph[owner];
+    if (glyph) {
+      const t = el('text', { x: 0, y: 5, class: 'glyph', 'text-anchor': 'middle' });
+      t.textContent = glyph;
+      g.appendChild(t);
+    }
+    return g;
+  }
+
+  function addDefs(svgEl, prefix) {
+    const th = BB.theme.current();
+    const defs = el('defs', {});
+    ['R', 'G'].forEach((o) => {
+      const grad = el('radialGradient', { id: `${prefix}${o}`, cx: '35%', cy: '30%', r: '75%' });
+      grad.appendChild(el('stop', { offset: '0%', 'stop-color': th.pieces[o][0] }));
+      grad.appendChild(el('stop', { offset: '100%', 'stop-color': th.pieces[o][1] }));
+      defs.appendChild(grad);
+    });
+    svgEl.appendChild(defs);
+  }
+
+  /**
+   * Draws a board into any <svg>. Used for the live game AND the tutorial,
+   * so both always show the same lines, from the same BB.board data.
+   * o = { pieces, highlights:{normal,capture}, selected, hideIds, onClick }
+   */
+  function drawBoard(svgEl, o) {
+    const { nodePos, edges, viewBox } = BB.board;
+    const hideIds = o.hideIds || [];
+    const hl = o.highlights || { normal: [], capture: [] };
+    if (!svgEl.__prefix) svgEl.__prefix = 'pg' + (++svgSeq) + '_';
+    const prefix = svgEl.__prefix;
+
+    svgEl.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+    svgEl.innerHTML = '';
+    addDefs(svgEl, prefix);
+
+    const eg = el('g', { class: 'edges' });
     edges.forEach(([a, b]) => {
       const pa = nodePos[a], pb = nodePos[b];
-      svg.appendChild(el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'edge' }));
+      eg.appendChild(el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'edge' }));
     });
+    svgEl.appendChild(eg);
 
     Object.keys(nodePos).forEach((id) => {
       const p = nodePos[id];
 
-      if (s.highlights.capture.includes(id)) {
-        svg.appendChild(el('circle', { cx: p.x, cy: p.y, r: 20, class: 'ring-capture' }));
-      } else if (s.highlights.normal.includes(id)) {
-        svg.appendChild(el('circle', { cx: p.x, cy: p.y, r: 17, class: 'ring-normal' }));
+      if (hl.capture.includes(id)) {
+        svgEl.appendChild(el('circle', { cx: p.x, cy: p.y, r: 20, class: 'ring-capture' }));
+      } else if (hl.normal.includes(id)) {
+        svgEl.appendChild(el('circle', { cx: p.x, cy: p.y, r: 17, class: 'ring-normal' }));
       }
-      if (s.selected === id) {
-        svg.appendChild(el('circle', { cx: p.x, cy: p.y, r: 22, class: 'ring-selected' }));
+      if (o.selected === id) {
+        svgEl.appendChild(el('circle', { cx: p.x, cy: p.y, r: 22, class: 'ring-selected' }));
       }
 
-      svg.appendChild(el('circle', { cx: p.x, cy: p.y, r: 4.5, class: 'node-dot' }));
+      svgEl.appendChild(el('circle', { cx: p.x, cy: p.y, r: 4.5, class: 'node-dot' }));
 
-      const owner = s.pieces[id];
+      const owner = o.pieces[id];
       if (owner && !hideIds.includes(id)) {
-        const piece = el('circle', { cx: p.x, cy: p.y, r: 14, class: `piece ${owner}` });
-        piece.addEventListener('click', () => BB.game.onNodeClick(id));
-        svg.appendChild(piece);
+        const piece = makePiece(owner, p.x, p.y, prefix);
+        if (o.onClick) piece.addEventListener('click', () => o.onClick(id));
+        svgEl.appendChild(piece);
       }
 
-      const hit = el('circle', { cx: p.x, cy: p.y, r: 19, fill: 'transparent', class: 'hit' });
-      hit.addEventListener('click', () => BB.game.onNodeClick(id));
-      svg.appendChild(hit);
+      if (o.onClick) {
+        const hit = el('circle', { cx: p.x, cy: p.y, r: 19, fill: 'transparent', class: 'hit', 'data-node': id });
+        hit.addEventListener('click', () => o.onClick(id));
+        svgEl.appendChild(hit);
+      }
+    });
+  }
+
+  function render(hideIds) {
+    const s = BB.game.state;
+    drawBoard(svg, {
+      pieces: s.pieces,
+      highlights: s.highlights,
+      selected: s.selected,
+      hideIds: hideIds || [],
+      onClick: (id) => BB.game.onNodeClick(id)
     });
   }
 
@@ -69,20 +124,22 @@ window.BB = window.BB || {};
     opts = opts || {};
     const { nodePos } = BB.board;
     const s = BB.game.state;
+    const gen = s.gen;
     const A = nodePos[fromId], B = nodePos[toId];
     const mover = s.pieces[fromId];
     const hideIds = [fromId];
     if (opts.through) hideIds.push(opts.through);
 
     render(hideIds);
+    const prefix = svg.__prefix;
 
-    const movingPiece = el('circle', { cx: A.x, cy: A.y, r: 15, class: `piece ${mover} moving-piece` });
+    const movingPiece = makePiece(mover, A.x, A.y, prefix, 'moving-piece');
     svg.appendChild(movingPiece);
 
     let throughEl = null;
     if (opts.through) {
       const cp = nodePos[opts.through];
-      throughEl = el('circle', { cx: cp.x, cy: cp.y, r: 14, class: `piece ${BB.game.opponent(mover)}` });
+      throughEl = makePiece(BB.game.opponent(mover), cp.x, cp.y, prefix);
       throughEl.style.transition = `opacity ${ANIM_DURATION}ms ease`;
       svg.appendChild(throughEl);
       requestAnimationFrame(() => { throughEl.style.opacity = '0'; });
@@ -91,12 +148,12 @@ window.BB = window.BB || {};
     const startTime = performance.now();
     let lastTrailTime = 0;
     function step(now) {
+      if (gen !== BB.game.state.gen) return; // game restarted: drop this animation
       const t = Math.min(1, (now - startTime) / ANIM_DURATION);
       const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; // easeInOutQuad
       const x = A.x + (B.x - A.x) * ease;
       const y = A.y + (B.y - A.y) * ease;
-      movingPiece.setAttribute('cx', x);
-      movingPiece.setAttribute('cy', y);
+      movingPiece.setAttribute('transform', `translate(${x} ${y})`);
 
       if (now - lastTrailTime > 28) {
         lastTrailTime = now;
@@ -135,7 +192,17 @@ window.BB = window.BB || {};
       piece.style.setProperty('--drift', (Math.random() * 160 - 80) + 'px');
       container.appendChild(piece);
     }
-    setTimeout(() => { container.innerHTML = ''; }, 4200);
+    clearTimeout(launchConfetti._t);
+    launchConfetti._t = setTimeout(() => { container.innerHTML = ''; }, 4200);
+  }
+
+  // Wipes anything left over from the previous game (confetti, flash text).
+  function clearTransient() {
+    const c = document.getElementById('confettiLayer');
+    if (c) c.innerHTML = '';
+    clearTimeout(launchConfetti._t);
+    clearTimeout(flashMessage._t);
+    if (messageEl) messageEl.classList.remove('show');
   }
 
   function updateStatusBar() {
@@ -152,6 +219,12 @@ window.BB = window.BB || {};
       label += s.currentPlayer === s.computerColor ? ' (Computer)' : ' (You)';
     }
     turnEl.textContent = label;
+    const tag = document.getElementById('modeTag');
+    if (tag) {
+      tag.textContent = s.gameMode === 'pvc'
+        ? ` · 🤖 ${BB.ai.LEVELS[s.difficulty].label}`
+        : ' · 2 players';
+    }
     turnEl.classList.remove('R', 'G');
     turnEl.classList.add(s.currentPlayer);
 
@@ -186,5 +259,5 @@ window.BB = window.BB || {};
     winSub = document.getElementById('winSub');
   }
 
-  BB.render = { init, render, updateStatusBar, flashMessage, showWinOverlay, hideWinOverlay, animateMove, launchConfetti };
+  BB.render = { init, render, drawBoard, updateStatusBar, flashMessage, showWinOverlay, hideWinOverlay, animateMove, launchConfetti, clearTransient };
 })(window.BB);

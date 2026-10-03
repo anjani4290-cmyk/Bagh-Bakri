@@ -11,10 +11,12 @@ From the project root:
 
 ```bash
 npm install -g cordova
-cordova create cordova-shell com.yourname.baghbakri "Bagh Bakri"
+cordova create cordova-shell com.anjanikumar.baghbakri "Bagh Bakri"
 cd cordova-shell
 cp -r ../index.html ../src ../assets ../images ../sounds ../lib www/
-cordova platform add android
+cp ../config.xml config.xml
+mkdir -p res/icon && cp -r ../assets/android res/icon/android
+cordova platform add android@15.0.0
 cordova build android --release
 ```
 

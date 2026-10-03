@@ -21,18 +21,20 @@
   </div>
 
   <div class="message" id="message"></div>
-  <div class="timer-row">⏱ <span id="timerDisplay">0:00</span></div>
+  <div class="timer-row">⏱ <span id="timerDisplay">0:00</span><span id="modeTag"></span></div>
 
   <div class="board-wrap">
     <span class="corner-motif tl">🐯</span>
     <span class="corner-motif tr">🐯</span>
-    <svg id="board" viewBox="0 0 500 720" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg id="board" viewBox="60 85 380 530" xmlns="http://www.w3.org/2000/svg"></svg>
     <span class="corner-motif bl">🐐</span>
     <span class="corner-motif br">🐐</span>
   </div>
 
   <div class="controls">
     <button class="primary" id="newGameBtn">New Game</button>
+    <button id="restartBtn" title="Restart with the same settings">↻ Restart</button>
+    <button id="themeBtn">🎨 Theme</button>
     <button id="howToPlayBtn">How to Play</button>
     <button id="soundToggleBtn" title="Toggle sound">🔊 Sound</button>
     <button id="statsBtn">🏆 Stats</button>
@@ -50,8 +52,13 @@
       <p>How would you like to play?</p>
       <div class="mode-options">
         <button class="primary" id="btnFriend">🧑‍🤝‍🧑 Play with a Friend</button>
-        <button id="btnComputer">🤖 Play vs Computer</button>
+        <button class="primary" id="btnComputer">🤖 Play vs Computer</button>
+        <div class="mode-row">
+          <button id="btnSetupTutorial">📖 How to Play</button>
+          <button id="btnSetupTheme">🎨 <span id="setupThemeName">Classic</span></button>
+        </div>
       </div>
+      <button class="mode-back hidden" id="btnSetupCancel">Cancel &mdash; back to game</button>
     </div>
     <div id="modeStep2" class="hidden">
       <h2>Choose Your Side</h2>
@@ -62,24 +69,42 @@
       </div>
       <button class="mode-back" id="btnModeBack">&larr; Back</button>
     </div>
+    <div id="modeStep3" class="hidden">
+      <h2>Difficulty</h2>
+      <p>How strong should the computer be?</p>
+      <div class="mode-options">
+        <button class="primary diff-btn" data-level="easy">🌱 Easy<small>Makes simple choices &mdash; and the odd slip</small></button>
+        <button class="primary diff-btn" data-level="moderate">⚔️ Moderate<small>Looks a few moves ahead</small></button>
+        <button class="primary diff-btn" data-level="hard">🔥 Hard<small>Searches deepest &mdash; plays its best</small></button>
+      </div>
+      <button class="mode-back" id="btnDiffBack">&larr; Back</button>
+    </div>
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="helpOverlay">
-  <div class="modal">
-    <h2>How to Play</h2>
-    <ol>
-      <li>Each player starts with 16 pieces (goti): Red across the top, Green across the bottom.</li>
-      <li>Players take turns moving one piece at a time. Red moves first unless chosen otherwise.</li>
-      <li>A normal move slides a piece one step along a drawn line to an empty point.</li>
-      <li>A piece may move along any line touching it &mdash; straight or diagonal &mdash; but only where a line is actually drawn.</li>
-      <li>Capture an opponent's piece by jumping over it in a straight line to an empty point directly beyond it.</li>
-      <li>After a capture, the same piece keeps jumping if another capture is available &mdash; you can't switch pieces mid-chain.</li>
-      <li>The centre point starts empty and is a useful crossing point for both sides.</li>
-      <li>The first player to capture all 16 of the opponent's pieces wins. A player with no legal move at all ends the game in a draw.</li>
-      <li>Playing vs Computer: pick your colour and the computer plays the other side automatically, always following the same rules (including forced capture chains).</li>
-    </ol>
-    <div class="close-row"><button class="primary" id="closeHelp">Got it</button></div>
+<div class="modal-overlay hidden" id="themeOverlay">
+  <div class="modal theme-modal">
+    <h2>Board Theme</h2>
+    <p>Only the look changes &mdash; rules, board lines and the computer stay exactly the same.</p>
+    <div class="theme-grid" id="themeGrid"></div>
+    <div class="close-row"><button class="primary" id="closeTheme">Done</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="tutorialOverlay">
+  <div class="modal tutorial-modal">
+    <h2 id="tutTitle">How to Play</h2>
+    <div class="tut-board-wrap"><svg id="tutorialBoard" viewBox="60 85 380 530" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <p id="tutText"></p>
+    <p class="tut-hint" id="tutHint"></p>
+    <div class="tut-dots" id="tutDots"></div>
+    <div class="tut-nav">
+      <button id="tutSkipBtn" class="mode-back">Skip</button>
+      <button id="tutResetBtn" class="hidden">↺ Reset</button>
+      <span class="spacer"></span>
+      <button id="tutBackBtn">&larr; Back</button>
+      <button class="primary" id="tutNextBtn">Next &rarr;</button>
+    </div>
   </div>
 </div>
 
@@ -87,7 +112,10 @@
   <div class="modal win-modal">
     <h2 id="winText">🏆 Red Wins!</h2>
     <p id="winSub"></p>
-    <div class="close-row"><button class="primary" id="playAgainBtn">Play Again</button></div>
+    <div class="close-row win-actions">
+      <button class="primary" id="playAgainBtn">Play Again</button>
+      <button id="changeSettingsBtn">Change Settings</button>
+    </div>
   </div>
 </div>
 
@@ -102,14 +130,16 @@
   </div>
 </div>
 
-<!-- Load order matters: board -> sound -> timer -> stats -> game -> ai -> render -> main -->
+<!-- Load order matters: board -> theme -> sound -> timer -> stats -> game -> ai -> render -> tutorial -> main -->
 <script src="src/js/board.js"></script>
+<script src="src/js/theme.js"></script>
 <script src="src/js/sound.js"></script>
 <script src="src/js/timer.js"></script>
 <script src="src/js/stats.js"></script>
 <script src="src/js/game.js"></script>
 <script src="src/js/ai.js"></script>
 <script src="src/js/render.js"></script>
+<script src="src/js/tutorial.js"></script>
 <script src="src/js/main.js"></script>
 </body>
 </html>

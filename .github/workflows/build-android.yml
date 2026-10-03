@@ -1,24 +1,29 @@
 name: Build Android Release (.aab)
 
-# Produces a signed bagh-bakri-release.aab, ready to upload to the
-# Google Play Console, using GitHub's free hosted build machines
-# (which already have the Android SDK, Gradle, and a JDK installed).
+# Produces a SIGNED bagh-bakri-release.aab for Google Play.
+# Run it manually: Actions tab -> "Build Android Release (.aab)" -> Run workflow.
+# Requires the four ANDROID_* repository secrets (see README.md -> "Building the .aab").
 #
-# Run it from the "Actions" tab in your GitHub repo -> select this
-# workflow -> "Run workflow". When it finishes, download the .aab
-# from the run's "Artifacts" section.
-#
-# One-time setup required before this will produce a SIGNED bundle -
-# see README.md -> "Building the .aab with GitHub Actions" for the
-# exact keytool command and where to paste the four secrets below.
-# Without those secrets, this still builds an UNSIGNED bundle so you
-# can confirm the build works, but Google Play will not accept an
-# unsigned upload.
+# Guard rails built in (the run FAILS instead of producing a wrong bundle if):
+#   - config.xml's application ID is not the expected one, or a placeholder is left in the repo
+#   - a launcher icon is missing / wrong size
+#   - the signing secrets are missing or the keystore/alias/password don't match
+#   - the generated project does not target API 36 or does not use the expected package name
+#   - the finished .aab is unsigned or does not contain the expected package name
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
+    inputs:
+      allow_unsigned:
+        description: "Build an UNSIGNED bundle for a dry run (Google Play will reject it)"
+        type: boolean
+        default: false
+
+env:
+  EXPECTED_APP_ID: com.anjanikumar.baghbakri
+  CORDOVA_VERSION: 13.0.0           # Cordova CLI
+  CORDOVA_ANDROID_VERSION: 15.0.0   # targets API 36 (required by Google Play since 31 Aug 2026)
+  REQUIRED_TARGET_SDK: "36"
 
 jobs:
   build:
@@ -26,6 +31,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify app identity, placeholders and icons
+        run: |
+          set -euo pipefail
+          APP_ID=$(sed -n 's/.*<widget[^>]* id="\([^"]*\)".*/\1/p' config.xml | head -n 1)
+          echo "config.xml application ID: $APP_ID"
+          if [ "$APP_ID" != "$EXPECTED_APP_ID" ]; then
+            echo "::error::config.xml id is '$APP_ID' but must be '$EXPECTED_APP_ID'. The Play Store ID can never change after the first upload."
+            exit 1
+          fi
+          if grep -rIn -i -E "yourname|you@example\.com|Your Name" --exclude-dir=.git --exclude-dir=.github .; then
+            echo "::error::Placeholder text found (listed above)."
+            exit 1
+          fi
+          for d in ldpi:36 mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            f="assets/android/icon-${d%%:*}.png"; px="${d##*:}"
+            [ -f "$f" ] || { echo "::error::Missing $f"; exit 1; }
+            file "$f" | grep -q "${px} x ${px}" || { echo "::error::$f is not ${px}x${px}"; exit 1; }
+          done
+          file assets/icon.png | grep -q "512 x 512" || { echo "::error::assets/icon.png must be 512x512"; exit 1; }
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -36,28 +61,57 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # cordova-android 15 needs Node >= 20.17
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android SDK 36 platform and build tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Install Cordova
-        run: npm install -g cordova
+        run: npm install -g cordova@${CORDOVA_VERSION}
 
       - name: Assemble the Cordova shell project
         run: |
-          cordova create cordova-shell com.yourname.baghbakri "Bagh Bakri"
+          set -euo pipefail
+          cordova create cordova-shell "$EXPECTED_APP_ID" "Bagh Bakri"
           rm -rf cordova-shell/www
           mkdir cordova-shell/www
           cp -r index.html src assets images sounds lib cordova-shell/www/
-          cp -r assets cordova-shell/assets
           cp config.xml cordova-shell/config.xml
+          mkdir -p cordova-shell/res/icon
+          cp -r assets/android cordova-shell/res/icon/android
 
-      - name: Add Android platform
+      - name: Add Android platform (pinned)
         working-directory: cordova-shell
-        run: cordova platform add android
+        run: cordova platform add android@${CORDOVA_ANDROID_VERSION}
 
-      - name: Write signing config (if secrets are present)
+      - name: Verify generated project (package name, target SDK, icons)
+        working-directory: cordova-shell
+        run: |
+          set -euo pipefail
+          CFG=platforms/android/cdv-gradle-config.json
+          if [ -f "$CFG" ]; then
+            cat "$CFG"
+            NS=$(node -e 'const c=require("./"+process.argv[1]);process.stdout.write(String(c.PACKAGE_NAMESPACE||""))' "$CFG")
+            TS=$(node -e 'const c=require("./"+process.argv[1]);process.stdout.write(String(c.SDK_VERSION||""))' "$CFG")
+            [ -z "$NS" ] || [ "$NS" = "$EXPECTED_APP_ID" ] || { echo "::error::Generated package '$NS' != '$EXPECTED_APP_ID'"; exit 1; }
+            [ -z "$TS" ] || [ "$TS" = "$REQUIRED_TARGET_SDK" ] || { echo "::error::targetSdk is '$TS', Google Play requires $REQUIRED_TARGET_SDK"; exit 1; }
+          else
+            echo "::warning::$CFG not found; relying on the post-build .aab check instead."
+          fi
+          if grep -rIl "yourname" platforms/android --include=*.gradle --include=*.xml --include=*.json 2>/dev/null | grep -q .; then
+            echo "::error::Placeholder package name found in generated project"; exit 1
+          fi
+          # Cordova copies the launcher icons into res/mipmap-*dpi/ic_launcher.png (adaptive/legacy)
+          N=$(find platforms/android/app/src/main/res -name "ic_launcher*.png" | wc -l)
+          echo "launcher icon files in project: $N"
+          [ "$N" -ge 6 ] || { echo "::error::Launcher icons were not applied (found $N). Check the <icon> paths in config.xml."; exit 1; }
+
+      - name: Write signing config
         id: signing
         working-directory: cordova-shell
         env:
@@ -65,48 +119,69 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ALLOW_UNSIGNED: ${{ inputs.allow_unsigned }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            cat > build.json << EOF
-          {
-            "android": {
-              "release": {
-                "keystore": "release.keystore",
-                "storePassword": "$KEYSTORE_PASSWORD",
-                "alias": "$KEY_ALIAS",
-                "password": "$KEY_PASSWORD",
-                "keystoreType": "PKCS12"
-              }
-            }
-          }
-          EOF
-            echo "has_signing=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_signing=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No signing secrets found - building an UNSIGNED bundle. Google Play will reject an unsigned upload. See README.md to add the four ANDROID_* secrets."
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            if [ "$ALLOW_UNSIGNED" = "true" ]; then
+              echo "has_signing=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::Signing secrets missing - building an UNSIGNED bundle (dry run). Google Play will reject it."
+              exit 0
+            fi
+            echo "::error::One or more signing secrets are missing (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Add them under Settings > Secrets and variables > Actions."
+            exit 1
           fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$PWD/release.keystore"
+          # Fail early if the keystore, alias or password is wrong (secret values are never printed)
+          keytool -list -keystore "$PWD/release.keystore" -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" > /dev/null \
+            || { echo "::error::Keystore could not be opened with the given alias/password."; exit 1; }
+          # JSON.stringify escapes any special characters in the passwords safely
+          node -e 'const e=process.env;require("fs").writeFileSync("build.json",JSON.stringify({android:{release:{keystore:process.cwd()+"/release.keystore",storePassword:e.KEYSTORE_PASSWORD,alias:e.KEY_ALIAS,password:e.KEY_PASSWORD,keystoreType:""}}}))'
+          echo "has_signing=true" >> "$GITHUB_OUTPUT"
 
       - name: Build release App Bundle (signed)
         if: steps.signing.outputs.has_signing == 'true'
         working-directory: cordova-shell
         run: cordova build android --release --buildConfig=build.json -- --packageType=bundle
 
-      - name: Build release App Bundle (unsigned)
+      - name: Build release App Bundle (unsigned dry run)
         if: steps.signing.outputs.has_signing == 'false'
         working-directory: cordova-shell
         run: cordova build android --release -- --packageType=bundle
 
-      - name: Locate and rename the .aab
+      - name: Locate, verify and rename the .aab
         working-directory: cordova-shell
+        env:
+          HAS_SIGNING: ${{ steps.signing.outputs.has_signing }}
         run: |
-          AAB_PATH=$(find platforms/android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
-          echo "Found: $AAB_PATH"
+          set -euo pipefail
+          mapfile -t FOUND < <(find platforms/android/app/build/outputs/bundle/release -name "*.aab")
+          [ "${#FOUND[@]}" -eq 1 ] || { echo "::error::Expected exactly one .aab, found ${#FOUND[@]}"; exit 1; }
+          AAB="${FOUND[0]}"
+          echo "Found: $AAB"
+          # The compiled manifest must contain the expected package name and no placeholder
+          MANIFEST_STRINGS=$(unzip -p "$AAB" base/manifest/AndroidManifest.xml | strings)
+          echo "$MANIFEST_STRINGS" | grep -q "$EXPECTED_APP_ID" || { echo "::error::$EXPECTED_APP_ID not found in the bundle's manifest"; exit 1; }
+          if echo "$MANIFEST_STRINGS" | grep -qi "yourname"; then echo "::error::Placeholder package in bundle"; exit 1; fi
+          SIGFILES=$(unzip -Z1 "$AAB" | grep -E '^META-INF/.*\.(RSA|DSA|EC)$' || true)
+          if [ "$HAS_SIGNING" = "true" ]; then
+            [ -n "$SIGFILES" ] || { echo "::error::No signature files (META-INF/*.RSA) in the bundle - it is unsigned"; exit 1; }
+            jarsigner -verify -certs "$AAB" | tee /tmp/jarsigner.txt
+            grep -q "jar verified" /tmp/jarsigner.txt || { echo "::error::Bundle is not properly signed"; exit 1; }
+            echo "Signing certificate fingerprints (compare with your Play Console upload key):"
+            keytool -printcert -jarfile "$AAB" | grep -E "Owner|SHA1|SHA256" || true
+          fi
           mkdir -p ../dist
-          cp "$AAB_PATH" ../dist/bagh-bakri-release.aab
+          cp "$AAB" ../dist/bagh-bakri-release.aab
+          ls -l ../dist
+
+      - name: Remove keystore from the runner
+        if: always()
+        run: rm -f cordova-shell/release.keystore cordova-shell/build.json
 
       - name: Upload .aab as a build artifact
         uses: actions/upload-artifact@v4
         with:
           name: bagh-bakri-release
           path: dist/bagh-bakri-release.aab
+          if-no-files-found: error

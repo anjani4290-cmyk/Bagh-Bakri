@@ -5,11 +5,12 @@
   "main": "index.html",
   "scripts": {
     "start": "npx serve . -l 5000",
-    "cordova:add-android": "cordova platform add android",
+    "cordova:add-android": "cordova platform add android@15.0.0",
     "cordova:add-ios": "cordova platform add ios",
     "cordova:build-android": "cordova build android --release",
     "cordova:build-ios": "cordova build ios --release",
-    "firebase:deploy": "firebase deploy"
+    "test": "node --test tests/topology.test.js tests/ai.test.js",
+    "test:e2e": "python3 tests/e2e.py"
   },
   "keywords": [
     "board-game",
@@ -19,9 +20,9 @@
     "two-player",
     "capture-game"
   ],
-  "author": "",
+  "author": "Anjani Kumar",
   "license": "MIT",
   "devDependencies": {
-    "cordova": "^12.0.0"
+    "cordova": "13.0.0"
   }
 }
