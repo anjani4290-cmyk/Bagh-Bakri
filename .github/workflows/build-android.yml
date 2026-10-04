@@ -20,7 +20,7 @@ on:
         default: false
 
 env:
-  EXPECTED_APP_ID: com.anjanikumar.baghbakri
+  EXPECTED_APP_ID: com.baghbakri.game
   CORDOVA_VERSION: 13.0.0           # Cordova CLI
   CORDOVA_ANDROID_VERSION: 15.0.0   # targets API 36 (required by Google Play since 31 Aug 2026)
   REQUIRED_TARGET_SDK: "36"
