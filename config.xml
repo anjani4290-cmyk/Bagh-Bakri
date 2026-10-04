@@ -39,5 +39,5 @@
 
     <preference name="Orientation" value="portrait" />
     <preference name="Fullscreen" value="false" />
-    <preference name="BackgroundColor" value="0xff191009" />
+    <preference name="BackgroundColor" value="#ff191009" />
 </widget>
